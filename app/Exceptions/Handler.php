@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Exceptions;
+
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
@@ -41,10 +42,26 @@ class Handler extends ExceptionHandler
         'password_confirmation',
     ];
 
+    public function register(): void
+    {
+        $this->renderable(function (QueryException $e, $request) {
+            // Handle unique constraint violation
+            if ($e->getCode() == 23000) {
+                return response()->json([
+                    'message' => 'Database error: Duplicate entry or constraint violation',
+                ], 422);
+            }
+
+            // Handle other database-related errors
+            return response()->json([
+                'message' => 'Database error occurred',
+            ], 500);
+        });
+    }
     /**
      * Register the exception handling callbacks for the application.
      */
-    public function register(): void
+    /*public function register(): void
     {
         $this->reportable(function (Throwable $e) {
             //
@@ -106,5 +123,5 @@ class Handler extends ExceptionHandler
             ], $e->getStatusCode());
         });
 
-    }
+    }*/
 }
