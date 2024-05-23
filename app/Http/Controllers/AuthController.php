@@ -22,7 +22,7 @@ class AuthController extends Controller
     use ResponsesTrait;
     public function signup(signupRequest $request)
     {
-        $user = User::where('email', $request->email)->exists();
+        $user = User::where('email', $request->input('email'))->first();
         if ($user) {
             return $this->sendFail('This Email is already in use', 422);
         } else {
@@ -57,7 +57,7 @@ class AuthController extends Controller
                 //fire event
                 //VerifyEmailEvent::dispatch($user);
 
-                return $this->sendSuccess($user, 'User Signup successfully', 201, $accessToken, $refreshToken);
+                return $this->sendSuccess($user, 'User Signup successfully', 201, $accessToken->plainTextToken, $refreshToken->plainTextToken);
             }
         }
     }
@@ -66,21 +66,28 @@ class AuthController extends Controller
     public function login(loginRequest $request)
     {
         $user = User::where('email', $request->email)->first();
+        //$errors = [];
+        //$status = [];
         if (!$user) {
             //throw new authExceptions('User not found', 404);
+            //$errors[] = 'User not found';
+            //$status[] = 404;
             return $this->sendFail('User not found', 404);
         }
         if (!Hash::check($request->password, $user->password)) {
+            //$errors[] = 'Invalid password';
+            //$status[] = 422;
             return $this->sendFail('Invalid password', 422);
         }
         if ($user->phone_number !== $request->phone_number) {
+            //$errors[] = 'Invalid password';
+            //$status[] = 422;
             return $this->sendFail('Phone number does not match', 422);
         }
-
         $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
         $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
         $user->save();
-        return $this->sendSuccess($user, 'User Loged In successfully', 200, $accessToken, $refreshToken);
+        return $this->sendSuccess($user, 'User Loged In successfully', 200, $accessToken->plainTextToken, $refreshToken->plainTextToken);
     }
 
     //-----------------------------------------------------------------------------------------
@@ -94,19 +101,24 @@ class AuthController extends Controller
     }
     //-----------------------------------------------------------------------------------------
     public function refreshToken(Request $request)
-    {
+    { //!Auth::check()-!auth()->check()-!auth()->guard('api')->check()-!Auth::guard('api')->check()
+        $user = Auth::user();
+        if (!$user) {
+            // Handle unauthenticated status
+            return $this->sendFail('Unauthenticated user', 401);
+        }
         // Revoke all existing tokens for the user
         $request->user()->tokens()->delete();
 
         // Create a new access token
-        $accessToken = $request->user()->createToken(
+        $refreshToken = $request->user()->createToken(
             'access_token',
             [TokenAbility::ACCESS_API->value],
             Carbon::now()->addMinutes(config('sanctum.ac_expiration'))
         );
 
         // Return response with the new token
-        return $this->sendSuccess(null, 'Token generated', 200, $accessToken, null);
+        return $this->sendSuccess(null, 'Token generated', 200, null, $refreshToken->plainTextToken);
     }
     //------------------------------------
 }
