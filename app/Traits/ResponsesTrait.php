@@ -4,7 +4,7 @@ namespace App\Traits;
 
 trait ResponsesTrait
 {
-    public function sendSuccess($data, $message, $code, $access_token, $refresh_token)
+    public function sendSuccess($data, $message, $code = 200, $access_token, $refresh_token)
     {
         return response()->json([
             'status' => true,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\UserSignedUp;
 use App\Http\Requests\Auth\loginRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
@@ -15,6 +16,9 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\VerificationCodeMail;
+use Illuminate\Support\Facades\Cache;
 
 class AuthController extends Controller
 {
@@ -33,15 +37,17 @@ class AuthController extends Controller
                 if ($request->hasFile('profile_photo')) {
                     $profilePhoto = $request->file('profile_photo');
                     $photoname = $this->uploadFile($profilePhoto, 'profile_photos');
-                } else
+                } else {
                     $photoname = null;
+                }
 
                 // Handle certificate upload
                 if ($request->hasFile('certificate')) {
                     $certificate = $request->file('certificate');
                     $filename = $this->uploadFile($certificate, 'files');
-                } else
+                } else {
                     $filename = null;
+                }
 
                 $user = new User([
                     'username' => $request->username,
@@ -52,10 +58,14 @@ class AuthController extends Controller
                     'certificate' => $filename,
                 ]);
                 $user->save();
+
+                // Dispatch the UserSignedUp event
+                //event(new UserSignedUp($user));
+
+                $this->sendVerificationCode($user);
+
                 $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
                 $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
-                //fire event
-                //VerifyEmailEvent::dispatch($user);
 
                 return $this->sendSuccess($user, 'User Signup successfully', 201, $accessToken->plainTextToken, $refreshToken->plainTextToken);
             }
@@ -87,6 +97,7 @@ class AuthController extends Controller
         $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
         $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
         $user->save();
+
         return $this->sendSuccess($user, 'User Loged In successfully', 200, $accessToken->plainTextToken, $refreshToken->plainTextToken);
     }
 
@@ -101,7 +112,8 @@ class AuthController extends Controller
     }
     //-----------------------------------------------------------------------------------------
     public function refreshToken(Request $request)
-    { //!Auth::check()-!auth()->check()-!auth()->guard('api')->check()-!Auth::guard('api')->check()
+    {
+        //!Auth::check()-!auth()->check()-!auth()->guard('api')->check()-!Auth::guard('api')->check()
         $user = Auth::user();
         if (!$user) {
             // Handle unauthenticated status
@@ -111,14 +123,91 @@ class AuthController extends Controller
         $request->user()->tokens()->delete();
 
         // Create a new access token
-        $refreshToken = $request->user()->createToken(
-            'access_token',
-            [TokenAbility::ACCESS_API->value],
-            Carbon::now()->addMinutes(config('sanctum.ac_expiration'))
-        );
+        $refreshToken = $request->user()->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
 
         // Return response with the new token
         return $this->sendSuccess(null, 'Token generated', 200, null, $refreshToken->plainTextToken);
     }
-    //------------------------------------
+    //------------------------------------------------------------------------
+    public function sendVerificationCode(User $user)
+    {
+        try {
+            //return response()->json([$user->email, $user->id]);
+            // Generate verification code and expiration time
+            $verificationCode = Str::random(6);
+            $expirationTime = now()->addMinutes(3);
+
+            // Save verification code and expiration time in cache
+            Cache::remember($user->id, $expirationTime, function () use ($verificationCode, $user) {
+                return [
+                    'email' => $user->email,
+                    'v_code' => $verificationCode
+                ];
+            });
+
+            Mail::to($user->email)->send(new VerificationCodeMail($verificationCode));
+
+            return response()->json(['email' => $user->email, 'verification_code' => $verificationCode, 'id' => $user->id]);
+        } catch (\Exception $e) {
+            return response()->json($e->getMessage());
+        }
+    }
+
+
+    // Save verification code and expiration time to the user
+    //$user->verification_code = $verificationCode;
+    //$user->verification_code_expires_at = $expirationTime;
+    //------------------------------------------------------------------------
+    public function verifyEmail(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'verification_code' => 'required|string',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json('Invalid email', 422);
+        }
+
+        if ($user->verification_code !== $request->verification_code) {
+            return response()->json('Invalid verification code', 422);
+        }
+
+        if ($user->verification_code_expires_at < now()) {
+            return response()->json('Verification code has expired', 422);
+        }
+
+        $user->email_verified_at = now();
+        $user->save();
+
+        return response()->json('Email verified');
+    }
+    //with cache
+    public function verifyEmail2(Request $request)
+    {
+        $userId = $request->input('user_id');
+        $verificationCode = $request->input('verification_code');
+
+        $cacheKey = 'verification_code_' . $userId;
+        $storedVerificationCode = Cache::get($cacheKey);
+
+        if ($storedVerificationCode && $storedVerificationCode === $verificationCode) {
+            // Verification code matches, proceed with email verification
+            // ...
+            // Clear the verification code from the cache
+            Cache::forget($cacheKey);
+
+            return response()->json(['message' => 'Email verified successfully.']);
+        } else {
+            // Verification code does not match or has expired
+            return response()->json(['error' => 'Invalid verification code.'], 422);
+        }
+    }
+    //------------------------------------------------------------------------
+    private function generateVerificationCode()
+    {
+        return Str::random(6);
+    }
 }

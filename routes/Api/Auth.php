@@ -11,6 +11,8 @@ Route::controller(AuthController::class)
         Route::middleware('guest:sanctum')
             ->group(function () {
                 Route::post('signup', 'signup')->name('auth.signup');
+                Route::post('email/verification', 'sendVerificationCode');
+                Route::post('email/verify', 'verifyEmail');
                 Route::post('login', 'login')->name('auth.login');
             });
         Route::middleware('auth:sanctum')
