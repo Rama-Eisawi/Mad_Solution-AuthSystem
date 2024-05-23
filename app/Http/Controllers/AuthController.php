@@ -61,9 +61,7 @@ class AuthController extends Controller
                 $user->save();
 
                 // Dispatch the UserSignedUp event
-                //event(new UserSignedUp($user));
-
-                $this->sendVerificationCode($user);
+                event(new UserSignedUp($user));
 
                 $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
                 $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
@@ -137,16 +135,11 @@ class AuthController extends Controller
             $verificationCode = Str::random(6);
             $expirationTime = now()->addMinutes(3);
 
-            // Save verification code and expiration time in cache
-            /*Cache::remember($user->id, $expirationTime, function () use ($verificationCode, $user) {
-                return [
-                    'email' => $user->email,
-                    'v_code' => $verificationCode
-                ];
-            });*/
+            //Store verification code in cache storage
             $cacheKey = 'verification_code_' . $user->id;
             Cache::put($cacheKey, $verificationCode, $expirationTime);
 
+            //Send verification code to user email
             Mail::to($user->email)->send(new VerificationCodeMail($verificationCode));
 
             return response()->json(['message' => 'Verification code sent successfully']);

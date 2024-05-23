@@ -8,6 +8,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\VerificationCodeMail;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Cache;
 
 class SendVerificationCode
 {
@@ -22,18 +23,21 @@ class SendVerificationCode
     /**
      * Handle the event.
      */
-    public function handle(UserSignedUp $event): void
+    public function handle(UserSignedUp $event)
     {
         $user = $event->user;
+
+        // Generate verification code and expiration time
         $verificationCode = Str::random(6);
         $expirationTime = now()->addMinutes(3);
 
-        // Save the verification code and expiration time to the user
-        $user->verification_code = $verificationCode;
-        $user->verification_code_expires_at = $expirationTime;
-        $user->save();
+        //Store verification code in cache storage
+        $cacheKey = 'verification_code_' . $user->id;
+        Cache::put($cacheKey, $verificationCode, $expirationTime);
 
-        // Send the verification code via email
+        //Send verification code to user email
         Mail::to($user->email)->send(new VerificationCodeMail($verificationCode));
+
+        return response()->json(['message' => 'Verification code sent successfully']);
     }
 }
