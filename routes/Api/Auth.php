@@ -12,11 +12,11 @@ Route::controller(AuthController::class)
             ->group(function () {
                 Route::post('signup', 'signup')->name('auth.signup');
                 Route::post('email/verification', 'sendVerificationCode');
-                Route::post('email/verify', 'verifyEmail');
                 Route::post('login', 'login')->name('auth.login');
             });
         Route::middleware('auth:sanctum')
             ->group(function () {
+                Route::post('email/verify', 'verifyEmail');
                 Route::post('logout', 'logout')->name('auth.logout');
             });
     });

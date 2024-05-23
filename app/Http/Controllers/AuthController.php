@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\VerificationCodeMail;
+use GuzzleHttp\Promise\Create;
 use Illuminate\Support\Facades\Cache;
 
 class AuthController extends Controller
@@ -49,7 +50,7 @@ class AuthController extends Controller
                     $filename = null;
                 }
 
-                $user = new User([
+                $user = User::create([
                     'username' => $request->username,
                     'phone_number' => $request->phone_number,
                     'email' => $request->email,
@@ -132,22 +133,23 @@ class AuthController extends Controller
     public function sendVerificationCode(User $user)
     {
         try {
-            //return response()->json([$user->email, $user->id]);
             // Generate verification code and expiration time
             $verificationCode = Str::random(6);
             $expirationTime = now()->addMinutes(3);
 
             // Save verification code and expiration time in cache
-            Cache::remember($user->id, $expirationTime, function () use ($verificationCode, $user) {
+            /*Cache::remember($user->id, $expirationTime, function () use ($verificationCode, $user) {
                 return [
                     'email' => $user->email,
                     'v_code' => $verificationCode
                 ];
-            });
+            });*/
+            $cacheKey = 'verification_code_' . $user->id;
+            Cache::put($cacheKey, $verificationCode, $expirationTime);
 
             Mail::to($user->email)->send(new VerificationCodeMail($verificationCode));
 
-            return response()->json(['email' => $user->email, 'verification_code' => $verificationCode, 'id' => $user->id]);
+            return response()->json(['message' => 'Verification code sent successfully']);
         } catch (\Exception $e) {
             return response()->json($e->getMessage());
         }
@@ -158,56 +160,37 @@ class AuthController extends Controller
     //$user->verification_code = $verificationCode;
     //$user->verification_code_expires_at = $expirationTime;
     //------------------------------------------------------------------------
+    //with cache
     public function verifyEmail(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
-            'verification_code' => 'required|string',
+            'user_id' => 'required|integer|exists:users,id',
+            'verification_code' => 'required|string|max:6',
         ]);
 
-        $user = User::where('email', $request->email)->first();
-
-        if (!$user) {
-            return response()->json('Invalid email', 422);
-        }
-
-        if ($user->verification_code !== $request->verification_code) {
-            return response()->json('Invalid verification code', 422);
-        }
-
-        if ($user->verification_code_expires_at < now()) {
-            return response()->json('Verification code has expired', 422);
-        }
-
-        $user->email_verified_at = now();
-        $user->save();
-
-        return response()->json('Email verified');
-    }
-    //with cache
-    public function verifyEmail2(Request $request)
-    {
         $userId = $request->input('user_id');
         $verificationCode = $request->input('verification_code');
 
         $cacheKey = 'verification_code_' . $userId;
-        $storedVerificationCode = Cache::get($cacheKey);
+        $storedCode = Cache::get($cacheKey);
 
-        if ($storedVerificationCode && $storedVerificationCode === $verificationCode) {
-            // Verification code matches, proceed with email verification
-            // ...
-            // Clear the verification code from the cache
-            Cache::forget($cacheKey);
 
-            return response()->json(['message' => 'Email verified successfully.']);
+        if ($storedCode && $storedCode === $verificationCode) {
+            $user = User::find($userId);
+            if ($user) {
+                $user->email_verified_at = now();
+                $user->save();
+
+                // Remove the verification code from the cache
+                Cache::forget($cacheKey);
+
+                return response()->json(['message' => 'Email verified successfully.']);
+            } else {
+                return response()->json(['error' => 'User not found.'], 404);
+            }
         } else {
-            // Verification code does not match or has expired
-            return response()->json(['error' => 'Invalid verification code.'], 422);
+            return response()->json(['error' => 'Invalid or expired verification code.'], 400);
         }
     }
     //------------------------------------------------------------------------
-    private function generateVerificationCode()
-    {
-        return Str::random(6);
-    }
 }
