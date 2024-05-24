@@ -27,70 +27,54 @@ class AuthController extends Controller
     use ResponsesTrait;
     public function signup(signupRequest $request)
     {
-        $user = User::where('email', $request->input('email'))->first();
-        if ($user) {
-            return $this->sendFail('This Email is already in use', 422);
-        } else {
-            if (User::where('phone_number', $request->phone_number)->exists()) {
-                return $this->sendFail('phone_number already in use', 422);
-            } else {
-                // Handle profile_photo upload
-                if ($request->hasFile('profile_photo')) {
-                    $profilePhoto = $request->file('profile_photo');
-                    $photoname = $this->uploadFile($profilePhoto, 'profile_photos');
-                } else {
-                    $photoname = null;
-                }
+        $user = User::create([
+            'username' => $request->username,
+            'phone_number' => $request->phone_number,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+        ]);
 
-                // Handle certificate upload
-                if ($request->hasFile('certificate')) {
-                    $certificate = $request->file('certificate');
-                    $filename = $this->uploadFile($certificate, 'files');
-                } else {
-                    $filename = null;
-                }
+        // Initialize the variables for file paths
+        $photoname = null;
+        $filename = null;
 
-                $user = User::create([
-                    'username' => $request->username,
-                    'phone_number' => $request->phone_number,
-                    'email' => $request->email,
-                    'password' => Hash::make($request->password),
-                    'profile_photo' => $photoname,
-                    'certificate' => $filename,
-                ]);
-                $user->save();
-
-                // Dispatch the UserSignedUp event
-                event(new UserSignedUp($user));
-
-                $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
-                $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
-
-                return $this->sendSuccess($user, 'User Signup successfully', 201, $accessToken->plainTextToken, $refreshToken->plainTextToken);
-            }
+        // Handle profile_photo upload
+        if ($request->hasFile('profile_photo')) {
+            $profilePhoto = $request->file('profile_photo');
+            $photoname = $this->uploadFile($profilePhoto, 'profile_photos', 'ProfilePhoto_' . $user->id);
         }
+
+        // Handle certificate upload
+        if ($request->hasFile('certificate')) {
+            $certificate = $request->file('certificate');
+            $filename = $this->uploadFile($certificate, 'files', 'CertificateFile_' . $user->id);
+        }
+        // Update the user with the file paths
+        $user->profile_photo = $photoname;
+        $user->certificate = $filename;
+        $user->save();
+
+        // Dispatch the UserSignedUp event
+        event(new UserSignedUp($user));
+
+        $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
+        $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
+
+        return $this->sendSuccess($user, 'User Signup successfully', 201, $accessToken->plainTextToken, $refreshToken->plainTextToken);
     }
 
     //-----------------------------------------------------------------------------------------
     public function login(loginRequest $request)
     {
         $user = User::where('email', $request->email)->first();
-        //$errors = [];
-        //$status = [];
         if (!$user) {
             //throw new authExceptions('User not found', 404);
-            //$errors[] = 'User not found';
-            //$status[] = 404;
             return $this->sendFail('User not found', 404);
         }
         if (!Hash::check($request->password, $user->password)) {
-            //$errors[] = 'Invalid password';
-            //$status[] = 422;
             return $this->sendFail('Invalid password', 422);
         }
         if ($user->phone_number !== $request->phone_number) {
-            //$errors[] = 'Invalid password';
-            //$status[] = 422;
             return $this->sendFail('Phone number does not match', 422);
         }
         $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));

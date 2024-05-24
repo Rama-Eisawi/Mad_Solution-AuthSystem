@@ -47,12 +47,15 @@ class Handler extends ExceptionHandler
      */
     public function register(): void
     {
+
         $this->renderable(function (UnauthorizedHttpException $e, $request) {
             return response()->json(['message' => 'Unauthorized'], 401);
         });
 
         $this->renderable(function (NotFoundHttpException $e, $request) {
-            return response()->json(['message' => 'Record not found'], 404);
+            return response()->json([
+                'message' => $e->getMessage() ?: 'Record not found',
+            ], 404);
         });
 
         $this->renderable(function (ValidationException $e, $request) {

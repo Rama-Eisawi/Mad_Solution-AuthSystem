@@ -9,15 +9,15 @@ use Illuminate\Support\Facades\Storage;
 trait FilesTrait
 {
 
-    public function uploadFile(UploadedFile $file, $directory = 'uploads')
+    public function uploadFile(UploadedFile $file, $directory = 'uploads', $customName )
     {
-
         // Generate a unique filename
-        $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
+        $filename = $customName . '.' . $file->getClientOriginalExtension();
         // Store the file
         $path = $file->storeAs($directory, $filename, 'public');
         return $path;
     }
+
     public function deleteFile($filePath)
     {
         // Check if the file exists
