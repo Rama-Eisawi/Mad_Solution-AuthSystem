@@ -33,9 +33,8 @@ class VerificationCodeMail extends Mailable
     }
     public function build()
     {
-        $this->from('hello@example.com', 'Me')
-            ->to('ohzrm5@admin.com', 'Your mail');
-        $this->subject('Your Verification Code')
+        return $this->view('emails.verification-code')
+            ->subject('Your Verification Code')
             ->html('<p>Your verification code is: ' . $this->verificationCode . '</p>');
     }
     /**

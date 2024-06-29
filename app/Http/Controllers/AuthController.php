@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use App\Http\Requests\Auth\signupRequest;
 use App\Enums\TokenAbility;
 use App\Exceptions\authExceptions;
+use App\Listeners\SendVerificationCode;
 use App\Traits\FilesTrait;
 use App\Traits\ResponsesTrait;
 use Illuminate\Support\Facades\Log;
@@ -77,11 +78,14 @@ class AuthController extends Controller
         if ($user->phone_number !== $request->phone_number) {
             return $this->sendFail('Phone number does not match', 422);
         }
-        $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
-        $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
-        $user->save();
-
-        return $this->sendSuccess($user, 'User Loged In successfully', 200, $accessToken->plainTextToken, $refreshToken->plainTextToken);
+        if ($user->email_verified_at == null) {
+            return $this->sendFail('Please verify your email', 401);
+        } else {
+            $accessToken = $user->createToken('access_token', [TokenAbility::ACCESS_API->value], Carbon::now()->addMinutes(config('sanctum.ac_expiration')));
+            $refreshToken = $user->createToken('refresh_token', [TokenAbility::ISSUE_ACCESS_TOKEN->value], Carbon::now()->addMinutes(config('sanctum.rt_expiration')));
+            $user->save();
+            return $this->sendSuccess($user, 'User Loged In successfully', 200, $accessToken->plainTextToken, $refreshToken->plainTextToken);
+        }
     }
 
     //-----------------------------------------------------------------------------------------
@@ -112,54 +116,49 @@ class AuthController extends Controller
         return $this->sendSuccess(null, 'Token generated', 200, null, $refreshToken->plainTextToken);
     }
     //------------------------------------------------------------------------
-    public function sendVerificationCode(User $user)
+    public function sendVerificationCode(Request $request)
     {
         try {
+            $ipAddress = $request->ip();
+            $email = Cache::get($ipAddress . '_email');
+            $verificationCode = Cache::get($ipAddress);
+            if (!$email) {
+                return response()->json(['message' => 'Email not found for the provided IP address.'], 404);
+            }
             // Generate verification code and expiration time
-            $verificationCode = Str::random(6);
+
+            $newVerificationCode = Str::random(6);
             $expirationTime = now()->addMinutes(3);
-
-            //Store verification code in cache storage
-            $cacheKey = 'verification_code_' . $user->id;
-            Cache::put($cacheKey, $verificationCode, $expirationTime);
-
+            //Store new verification code in cache storage
+            Cache::put($ipAddress, $newVerificationCode, $expirationTime);
             //Send verification code to user email
-            Mail::to($user->email)->send(new VerificationCodeMail($verificationCode));
+            Mail::to($email)->send(new VerificationCodeMail($newVerificationCode));
 
             return response()->json(['message' => 'Verification code sent successfully']);
         } catch (\Exception $e) {
             return response()->json($e->getMessage());
         }
     }
-
-
-    // Save verification code and expiration time to the user
-    //$user->verification_code = $verificationCode;
-    //$user->verification_code_expires_at = $expirationTime;
     //------------------------------------------------------------------------
     //with cache
     public function verifyEmail(Request $request)
     {
         $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
             'verification_code' => 'required|string|max:6',
         ]);
 
-        $userId = $request->input('user_id');
         $verificationCode = $request->input('verification_code');
-
-        $cacheKey = 'verification_code_' . $userId;
-        $storedCode = Cache::get($cacheKey);
-
-
+        $ipAddress = $request->ip();
+        $storedCode = Cache::get($ipAddress);
+        $email = Cache::get($ipAddress . '_email');
         if ($storedCode && $storedCode === $verificationCode) {
-            $user = User::find($userId);
+            $user = User::where('email', $email)->first();
             if ($user) {
                 $user->email_verified_at = now();
                 $user->save();
 
                 // Remove the verification code from the cache
-                Cache::forget($cacheKey);
+                Cache::forget($ipAddress);
 
                 return response()->json(['message' => 'Email verified successfully.']);
             } else {

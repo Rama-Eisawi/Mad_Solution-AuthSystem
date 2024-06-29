@@ -6,6 +6,7 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\Events\QueryExecuted;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Illuminate\Database\QueryException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
@@ -76,11 +77,11 @@ class Handler extends ExceptionHandler
                 'message' => 'Database error occurred',
             ], 500);
         });
-
         $this->renderable(function (HttpException $e, $request) {
             return response()->json([
                 'message' => $e->getMessage() ?: 'An error occurred',
             ], $e->getStatusCode());
         });
     }
+
 }

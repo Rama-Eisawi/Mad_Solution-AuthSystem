@@ -26,14 +26,14 @@ class SendVerificationCode
     public function handle(UserSignedUp $event)
     {
         $user = $event->user;
-
+        $ipAddress = request()->ip();
         // Generate verification code and expiration time
         $verificationCode = Str::random(6);
         $expirationTime = now()->addMinutes(3);
 
         //Store verification code in cache storage
-        $cacheKey = 'verification_code_' . $user->id;
-        Cache::put($cacheKey, $verificationCode, $expirationTime);
+        Cache::put($ipAddress . '_email', $user->email);
+        Cache::put($ipAddress, $verificationCode, $expirationTime);
 
         //Send verification code to user email
         Mail::to($user->email)->send(new VerificationCodeMail($verificationCode));

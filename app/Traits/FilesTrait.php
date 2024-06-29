@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Storage;
 trait FilesTrait
 {
 
-    public function uploadFile(UploadedFile $file, $directory = 'uploads', $customName )
+    public function uploadFile(UploadedFile $file, $directory = 'uploads', $customName)
     {
         // Generate a unique filename
         $filename = $customName . '.' . $file->getClientOriginalExtension();
